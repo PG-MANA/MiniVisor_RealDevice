@@ -9,9 +9,9 @@ mod asm;
 mod console;
 mod dtb;
 mod drivers {
+    pub mod dw_apb_uart;
     pub mod generic_timer;
     pub mod gicv3;
-    pub mod pl011;
     pub mod virtio;
     pub mod virtio_blk;
 }
@@ -31,7 +31,7 @@ mod registers;
 mod vgic;
 mod vm;
 
-use drivers::{generic_timer, gicv3, pl011, virtio_blk};
+use drivers::{dw_apb_uart, generic_timer, gicv3, virtio_blk};
 use lock::Mutex;
 use psci::PsciErrorCodes;
 use serial::SerialDevice;
@@ -45,8 +45,9 @@ use core::sync::atomic::{AtomicBool, Ordering};
 struct GlobalAllocator {}
 
 /// グローバル変数置き場
-static PL011_DEVICE: Mutex<pl011::Pl011> = Mutex::new(pl011::Pl011::invalid());
-static mut PL011_INT_ID: u32 = 0;
+static DW_APB_UART_DEVICE: Mutex<dw_apb_uart::DwApbUart> =
+    Mutex::new(dw_apb_uart::DwApbUart::invalid());
+static mut DW_APB_UART_INT_ID: u32 = 0;
 static MEMORY_ALLOCATOR: Mutex<memory_allocator::MemoryAllocator> =
     Mutex::new(memory_allocator::MemoryAllocator::new());
 static VIRTIO_BLK: Mutex<virtio_blk::VirtioBlk> = Mutex::new(virtio_blk::VirtioBlk::invalid());
@@ -101,7 +102,7 @@ extern "C" fn main(argc: usize, argv: *const *const u8) -> usize {
     let distributor = init_gic_distributor(&dtb);
     let redistributor = init_gic_redistributor(&dtb);
 
-    enable_serial_port_interrupt(&PL011_DEVICE.lock(), &distributor);
+    enable_serial_port_interrupt(&DW_APB_UART_DEVICE.lock(), &distributor);
 
     generic_timer::init_generic_timer_global(&dtb);
 
@@ -148,10 +149,10 @@ fn str_to_usize(s: &str) -> Option<usize> {
 }
 
 fn init_serial_port(dtb: &dtb::Dtb) -> Result<(), usize> {
-    let mut pl011 = None;
+    let mut dw_apb_uart = None;
     loop {
-        pl011 = dtb.search_node_by_compatible(b"arm,pl011", pl011.as_ref());
-        match &pl011 {
+        dw_apb_uart = dtb.search_node_by_compatible(b"snps,dw-apb-uart", dw_apb_uart.as_ref());
+        match &dw_apb_uart {
             Some(d) => {
                 if !dtb.is_node_operational(d) {
                     continue;
@@ -164,13 +165,13 @@ fn init_serial_port(dtb: &dtb::Dtb) -> Result<(), usize> {
             }
         }
     }
-    let pl011 = pl011.unwrap();
-    let Some((pl011_base, pl011_range)) = dtb.read_reg_property(&pl011, 0) else {
+    let dw_apb_uart = dw_apb_uart.unwrap();
+    let Some((dw_apb_uart_base, dw_apb_uart_range)) = dtb.read_reg_property(&dw_apb_uart, 0) else {
         return Err(6);
     };
 
     let interrupts =
-        dtb.read_property_as_u32_array(&dtb.get_property(&pl011, b"interrupts").unwrap());
+        dtb.read_property_as_u32_array(&dtb.get_property(&dw_apb_uart, b"interrupts").unwrap());
     let mut interrupt_number = 0;
     if u32::from_be(interrupts[0]) == gicv3::DTB_GIC_SPI
         && u32::from_be(interrupts[2]) == gicv3::DTB_GIC_LEVEL
@@ -178,12 +179,12 @@ fn init_serial_port(dtb: &dtb::Dtb) -> Result<(), usize> {
         interrupt_number = gicv3::GIC_SPI_BASE + u32::from_be(interrupts[1]);
     }
 
-    let Ok(pl011) = pl011::Pl011::new(pl011_base, pl011_range) else {
+    let Ok(dw_apb_uart) = dw_apb_uart::DwApbUart::new(dw_apb_uart_base, dw_apb_uart_range) else {
         return Err(7);
     };
-    unsafe { PL011_INT_ID = interrupt_number };
-    *PL011_DEVICE.lock() = pl011;
-    serial::init_default_serial_port(&PL011_DEVICE);
+    unsafe { DW_APB_UART_INT_ID = interrupt_number };
+    *DW_APB_UART_DEVICE.lock() = dw_apb_uart;
+    serial::init_default_serial_port(&DW_APB_UART_DEVICE);
     Ok(())
 }
 
@@ -287,10 +288,13 @@ fn init_gic_redistributor(dtb: &dtb::Dtb) -> gicv3::GicRedistributor {
     gic_redistributor
 }
 
-fn enable_serial_port_interrupt(pl011: &pl011::Pl011, distributor: &gicv3::GicDistributor) {
-    let int_id = unsafe { PL011_INT_ID };
+fn enable_serial_port_interrupt(
+    dw_apb_uart: &dw_apb_uart::DwApbUart,
+    distributor: &gicv3::GicDistributor,
+) {
+    let int_id = unsafe { DW_APB_UART_INT_ID };
     if int_id == 0 {
-        println!("PL011 does not support interrupt.");
+        println!("DW UART does not support interrupt.");
         return;
     }
     distributor.set_group(int_id, gicv3::GicGroup::NonSecureGroup1);
@@ -299,7 +303,7 @@ fn enable_serial_port_interrupt(pl011: &pl011::Pl011, distributor: &gicv3::GicDi
     distributor.set_trigger_mode(int_id, true);
     distributor.set_pending(int_id, false);
     distributor.set_enable(int_id, true);
-    pl011.enable_interrupt();
+    dw_apb_uart.enable_interrupt();
 }
 
 fn init_virtio_blk(dtb: &dtb::Dtb) -> Option<virtio_blk::VirtioBlk> {
