@@ -6,6 +6,8 @@ use crate::drivers::virtio_blk::VirtioBlk;
 use crate::paging::PAGE_SHIFT;
 use crate::{allocate_pages, free_pages};
 
+use core::ptr::read_unaligned;
+
 const FAT32_SIGNATURE: [u8; 8] = [b'F', b'A', b'T', b'3', b'2', b' ', b' ', b' '];
 
 const BYTES_PER_SECTOR_OFFSET: usize = 11;
@@ -60,16 +62,18 @@ impl Fat32 {
             println!("Bad Signature");
             return Err(());
         }
-
         /* BPBの読み取り */
-        let bytes_per_sector = unsafe { *((bpb_address + BYTES_PER_SECTOR_OFFSET) as *const u16) };
+        let bytes_per_sector =
+            unsafe { read_unaligned((bpb_address + BYTES_PER_SECTOR_OFFSET) as *const u16) };
         let sectors_per_cluster =
             unsafe { *((bpb_address + SECTORS_PER_CLUSTER_OFFSET) as *const u8) };
         let reserved_sectors =
-            unsafe { *((bpb_address + NUM_OF_RESERVED_CLUSTER_OFFSET) as *const u16) };
-        let number_of_fats = unsafe { *((bpb_address + NUM_OF_FATS_OFFSET) as *const u16) };
-        let fat_sectors = unsafe { *((bpb_address + FAT_SIZE_OFFSET) as *const u32) };
-        let root_cluster = unsafe { *((bpb_address + ROOT_CLUSTER_OFFSET) as *const u32) };
+            unsafe { read_unaligned((bpb_address + NUM_OF_RESERVED_CLUSTER_OFFSET) as *const u16) };
+        let number_of_fats =
+            unsafe { read_unaligned((bpb_address + NUM_OF_FATS_OFFSET) as *const u16) };
+        let fat_sectors = unsafe { read_unaligned((bpb_address + FAT_SIZE_OFFSET) as *const u32) };
+        let root_cluster =
+            unsafe { read_unaligned((bpb_address + ROOT_CLUSTER_OFFSET) as *const u32) };
 
         /* FATの読み込み */
         let fat_size = (fat_sectors as usize) * (bytes_per_sector as usize);
