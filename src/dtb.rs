@@ -220,7 +220,11 @@ impl Dtb {
         mut size_cells: u32,
     ) -> Result<Option<DtbNode>, ()> {
         self.skip_nop(pointer)?;
-        if *self.read_node(*pointer)? != Self::FDT_BEGIN_NODE {
+        let n = *self.read_node(*pointer)?;
+        if n != Self::FDT_BEGIN_NODE {
+            if n == Self::FDT_END_NODE || n == Self::FDT_END {
+                return Ok(None);
+            }
             return Err(());
         }
         *pointer += Self::FDT_TOKEN_BYTE;
@@ -290,7 +294,20 @@ impl Dtb {
         while self.read_node(pointer).is_ok() {
             match self._search_node(node_name, &mut pointer, address_cells, size_cells) {
                 Ok(Some(n)) => return Some(n),
-                Ok(None) => pointer += Self::FDT_TOKEN_BYTE,
+                Ok(None) => {
+                    match self.read_node(pointer).map(|n| *n) {
+                        Ok(Self::FDT_END) | Err(_) => {
+                            return None;
+                        }
+                        Ok(Self::FDT_BEGIN_NODE) => { /* Continue */ }
+                        Ok(Self::FDT_END_NODE) | Ok(Self::FDT_NOP) => {
+                            pointer += Self::FDT_TOKEN_BYTE;
+                        }
+                        Ok(_) => {
+                            return None;
+                        }
+                    }
+                }
                 Err(()) => return None,
             }
         }
@@ -305,7 +322,11 @@ impl Dtb {
         mut size_cells: u32,
     ) -> Result<Option<DtbNode>, ()> {
         self.skip_nop(pointer)?;
-        if *self.read_node(*pointer)? != Self::FDT_BEGIN_NODE {
+        let n = *self.read_node(*pointer)?;
+        if n != Self::FDT_BEGIN_NODE {
+            if n == Self::FDT_END_NODE || n == Self::FDT_END {
+                return Ok(None);
+            }
             return Err(());
         }
         *pointer += Self::FDT_TOKEN_BYTE;
@@ -404,7 +425,20 @@ impl Dtb {
                 size_cells,
             ) {
                 Ok(Some(n)) => return Some(n),
-                Ok(None) => pointer += Self::FDT_TOKEN_BYTE,
+                Ok(None) => {
+                    match self.read_node(pointer).map(|n| *n) {
+                        Ok(Self::FDT_END) | Err(_) => {
+                            return None;
+                        }
+                        Ok(Self::FDT_BEGIN_NODE) => { /* Continue */ }
+                        Ok(Self::FDT_END_NODE) | Ok(Self::FDT_NOP) => {
+                            pointer += Self::FDT_TOKEN_BYTE;
+                        }
+                        Ok(_) => {
+                            return None;
+                        }
+                    }
+                }
                 Err(()) => return None,
             }
         }
