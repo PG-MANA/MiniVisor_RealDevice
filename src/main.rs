@@ -196,17 +196,19 @@ pub fn panic(info: &core::panic::PanicInfo) -> ! {
 }
 
 pub fn setup_memory(dtb: &dtb::Dtb, dtb_address: usize, elf_address: usize, stack_pointer: usize) {
-    let memory = dtb
-        .search_node(b"memory", None)
-        .expect("Expected memory node.");
-    let (start, size) = dtb
-        .read_reg_property(&memory, 0)
-        .expect("Expected reg entry");
-    println!("RAM is [{:#X} ~ {:#X}]", start, start + size);
+    /* From `bdinfo` (8GiB) */
+    /* U-Boot 2025.04 */
+    let dram_list = [(0x200000, 0xefe00000), (0x100000000, 0x100000000)];
+    /* U-Boot 2017.09 (From https://github.com/hardkernel/u-boot.git) */
+    //let dram_list = [(0x0200000, 0x08200000), (0x09400000, 0xE6C00000)];
+
     let mut memory_allocator = MEMORY_ALLOCATOR.lock();
-    memory_allocator
-        .free(start, size)
-        .expect("Failed to free the RAM");
+    for (start, size) in dram_list {
+        println!("RAM is [{:#X} ~ {:#X}]", start, start + size);
+        memory_allocator
+            .free(start, size)
+            .expect("Failed to free the RAM");
+    }
 
     /* DTBを除外 */
     println!(
