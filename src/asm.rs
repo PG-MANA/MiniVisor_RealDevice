@@ -298,3 +298,65 @@ pub fn get_tpidr_el2() -> u64 {
 pub unsafe fn set_tpidr_el2(tpidr_el2: u64) {
     unsafe { asm!("msr tpidr_el2, {}", in(reg) tpidr_el2) };
 }
+
+pub fn data_barrier() {
+    unsafe { asm!("dsb sy") };
+}
+
+pub fn flush_data_cache_all() {
+    let clidr: u64;
+    data_barrier();
+    unsafe { asm!("mrs {:x}, clidr_el1", out(reg) clidr) };
+    /* Check All Cache Type */
+    for cache_level in 0..7 {
+        let ccsidr: u64;
+        let cache_type = (clidr >> (3 * cache_level)) & 0b111;
+        match cache_type {
+            0b000 => {
+                break; /* No Cache, Ignore the rest */
+            }
+            0b001 => {
+                continue; /* Instruction Cache Only */
+            }
+            0b010 | 0b011 | 0b100 => { /* Has data cache */ }
+            _ => {
+                /* Unknown Cache Type */
+                continue;
+            }
+        }
+        unsafe {
+            asm!("msr csselr_el1, {:x}\nisb\nmrs {:x}, ccsidr_el1",
+            in(reg) cache_level << 1,
+            out(reg) ccsidr)
+        };
+        let num_sets = (ccsidr & ((1 << 27) - 1)) >> 13;
+        let associativity = (ccsidr & ((1 << 13) - 1)) >> 3;
+        let line_size = ccsidr & 0b111;
+        let a = (associativity as u32).leading_zeros();
+        let l = line_size + 4;
+        for set in 0..=num_sets {
+            for way in 0..=associativity {
+                unsafe {
+                    asm!("dc cisw, {:x}", in(reg) (way << a) | (set << l) | (cache_level << 1))
+                };
+            }
+        }
+    }
+    data_barrier();
+    unsafe { asm!("msr csselr_el1, {:x}", in(reg) 0) };
+}
+
+pub unsafe fn clean_data_cache(address: usize, size: usize) {
+    let ctr_el0: u64;
+    unsafe { asm!("mrs {}, ctr_el0", out(reg)ctr_el0) };
+    let cache_bytes = 4;
+    let cache_size = cache_bytes << ((ctr_el0 >> 16) & 0xF);
+    let cache_mask = !(cache_size - 1);
+
+    let start = address & cache_mask;
+    let end = ((address + size) & cache_mask) + cache_bytes;
+    for a in start..=end {
+        unsafe { asm!("dc cvac, {}", in(reg) a) };
+    }
+    data_barrier();
+}
