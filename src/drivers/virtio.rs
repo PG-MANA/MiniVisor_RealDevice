@@ -1,6 +1,7 @@
 //!
 //! VirtIO 共通の実装
 //!
+#![allow(dead_code)]
 
 pub const VIRTIO_MMIO_MAGIC: usize = 0x000;
 pub const VIRTIO_MMIO_MAGIC_VALUE: u32 = 0x74726976;

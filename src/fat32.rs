@@ -2,7 +2,7 @@
 //! FAT32の実装
 //!
 
-use crate::drivers::virtio_blk::VirtioBlk;
+use crate::drivers::dw_mmc::DwMmc;
 use crate::paging::PAGE_SHIFT;
 use crate::{allocate_pages, free_pages};
 
@@ -52,7 +52,7 @@ struct DirectoryEntry {
 }
 
 impl Fat32 {
-    pub fn new(blk: &mut VirtioBlk, base_lba: usize, lba_size: usize) -> Result<Fat32, ()> {
+    pub fn new(blk: &mut DwMmc, base_lba: usize, lba_size: usize) -> Result<Fat32, ()> {
         let mut bpb_buffer: [u8; 512] = [0; 512];
         let bpb_address = &mut bpb_buffer as *mut _ as usize;
         blk.read(bpb_address, (base_lba * lba_size) as u64, 512)?;
@@ -152,7 +152,7 @@ impl Fat32 {
 
     fn read_sectors(
         &self,
-        blk: &mut VirtioBlk,
+        blk: &mut DwMmc,
         buffer: usize,
         base_sector: u32,
         sectors: u32,
@@ -167,7 +167,7 @@ impl Fat32 {
 
     fn write_sectors(
         &self,
-        blk: &mut VirtioBlk,
+        blk: &mut DwMmc,
         buffer: usize,
         base_sector: u32,
         sectors: u32,
@@ -284,7 +284,7 @@ impl Fat32 {
     pub fn read(
         &self,
         file_info: &FileInfo,
-        blk: &mut VirtioBlk,
+        blk: &mut DwMmc,
         buffer_address: usize,
         offset: usize,
         mut length: usize,
@@ -394,7 +394,7 @@ impl Fat32 {
     pub fn write(
         &self,
         file_info: &FileInfo,
-        blk: &mut VirtioBlk,
+        blk: &mut DwMmc,
         buffer_address: usize,
         offset: usize,
         mut length: usize,

@@ -1,6 +1,7 @@
 //!
 //! Virtio-Blkの実装
 //!
+#![allow(dead_code)]
 
 use crate::drivers::virtio::*;
 

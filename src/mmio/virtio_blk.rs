@@ -5,7 +5,7 @@
 use crate::drivers::{virtio::*, virtio_blk::*};
 use crate::fat32::FileInfo;
 use crate::vm::*;
-use crate::{FAT32, VIRTIO_BLK};
+use crate::{DW_MMC_BLK, FAT32};
 
 use core::ptr::{null_mut, read_volatile, write_volatile};
 
@@ -158,7 +158,7 @@ impl VirtioBlkMmio {
                     status = VIRTIO_BLK_S_IOERR;
                     continue;
                 };
-                let mut virtio_blk = VIRTIO_BLK.lock();
+                let mut virtio_blk = DW_MMC_BLK.lock();
                 let fat32 = unsafe { (&raw mut FAT32).as_mut().unwrap().assume_init_mut() };
                 let result = if is_write {
                     fat32.write(&self.file, &mut virtio_blk, address, offset, size as usize)

@@ -10,6 +10,7 @@ mod console;
 mod dtb;
 mod drivers {
     pub mod dw_apb_uart;
+    pub mod dw_mmc;
     pub mod generic_timer;
     pub mod gicv3;
     pub mod virtio;
@@ -31,7 +32,7 @@ mod registers;
 mod vgic;
 mod vm;
 
-use drivers::{dw_apb_uart, generic_timer, gicv3, virtio_blk};
+use drivers::{dw_apb_uart, dw_mmc, generic_timer, gicv3};
 use lock::Mutex;
 use psci::PsciErrorCodes;
 use serial::SerialDevice;
@@ -50,7 +51,7 @@ static DW_APB_UART_DEVICE: Mutex<dw_apb_uart::DwApbUart> =
 static mut DW_APB_UART_INT_ID: u32 = 0;
 static MEMORY_ALLOCATOR: Mutex<memory_allocator::MemoryAllocator> =
     Mutex::new(memory_allocator::MemoryAllocator::new());
-static VIRTIO_BLK: Mutex<virtio_blk::VirtioBlk> = Mutex::new(virtio_blk::VirtioBlk::invalid());
+static DW_MMC_BLK: Mutex<dw_mmc::DwMmc> = Mutex::new(dw_mmc::DwMmc::invalid());
 static mut FAT32: MaybeUninit<fat32::Fat32> = MaybeUninit::uninit();
 #[global_allocator]
 static GLOBAL_ALLOCATOR: GlobalAllocator = GlobalAllocator {};
@@ -106,12 +107,12 @@ extern "C" fn main(argc: usize, argv: *const *const u8) -> usize {
 
     generic_timer::init_generic_timer_global(&dtb);
 
-    let mut virtblk = init_virtio_blk(&dtb).unwrap();
-    let fat32 = init_fat32(&mut virtblk);
+    let mut dw_mmc = init_dw_mmc(&dtb).unwrap();
+    let fat32 = init_fat32(&mut dw_mmc);
 
-    let (boot_address, argument) = vm::create_vm(&fat32, &mut virtblk, &redistributor);
+    let (boot_address, argument) = vm::create_vm(&fat32, &mut dw_mmc, &redistributor);
 
-    *VIRTIO_BLK.lock() = virtblk;
+    *DW_MMC_BLK.lock() = dw_mmc;
     unsafe {
         (&raw mut FAT32).as_mut().unwrap().write(fat32);
         (&raw mut DTB).as_mut().unwrap().write(dtb);
@@ -306,15 +307,21 @@ fn enable_serial_port_interrupt(
     dw_apb_uart.enable_interrupt();
 }
 
-fn init_virtio_blk(dtb: &dtb::Dtb) -> Option<virtio_blk::VirtioBlk> {
-    let mut virtio = None;
+fn init_dw_mmc(dtb: &dtb::Dtb) -> Option<dw_mmc::DwMmc> {
+    let mut dw_mmc = None;
     loop {
-        virtio = dtb.search_node_by_compatible(b"virtio,mmio", virtio.as_ref());
-        match &virtio {
-            Some(virtio) => {
-                if dtb.is_node_operational(virtio) {
-                    let (base_address, _) = dtb.read_reg_property(virtio, 0).unwrap();
-                    if let Ok(blk) = virtio_blk::VirtioBlk::new(base_address) {
+        dw_mmc = dtb.search_node_by_compatible(b"rockchip,rk3568-dw-mshc", dw_mmc.as_ref());
+        match &dw_mmc {
+            Some(dw_mmc) => {
+                if dtb.is_node_operational(dw_mmc) {
+                    let (base_address, size) = dtb.read_reg_property(dw_mmc, 0).unwrap();
+                    let mut fifo_depth = 0;
+                    if let Some(depth) = dtb.get_property(dw_mmc, b"fifo-depth") {
+                        if let Some(depth) = dtb.read_property_as_u32(&depth) {
+                            fifo_depth = u32::from_be(depth);
+                        }
+                    }
+                    if let Ok(blk) = dw_mmc::DwMmc::new(base_address, size, fifo_depth) {
                         return Some(blk);
                     }
                 }
@@ -326,7 +333,7 @@ fn init_virtio_blk(dtb: &dtb::Dtb) -> Option<virtio_blk::VirtioBlk> {
     }
 }
 
-pub fn init_fat32(blk: &mut virtio_blk::VirtioBlk) -> fat32::Fat32 {
+pub fn init_fat32(blk: &mut dw_mmc::DwMmc) -> fat32::Fat32 {
     #[repr(C)]
     struct PartitionTableEntry {
         boot_flag: u8,
@@ -431,7 +438,7 @@ extern "C" fn core_main() -> ! {
 
     let (boot_address, argument) = vm::create_vm(
         unsafe { (&raw const FAT32).as_ref().unwrap().assume_init_ref() },
-        &mut VIRTIO_BLK.lock(),
+        &mut DW_MMC_BLK.lock(),
         &redistributor,
     );
     vm::boot_vm(boot_address, argument)

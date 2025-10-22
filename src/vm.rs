@@ -3,7 +3,7 @@
 //!
 
 use crate::asm;
-use crate::drivers::{generic_timer, gicv3::GicRedistributor, virtio_blk::VirtioBlk};
+use crate::drivers::{dw_mmc::DwMmc, generic_timer, gicv3::GicRedistributor};
 use crate::fat32::Fat32;
 use crate::lock::Mutex;
 use crate::mmio::{
@@ -153,7 +153,7 @@ impl MmioEntry {
 
 pub fn create_vm(
     fat32: &Fat32,
-    blk: &mut VirtioBlk,
+    blk: &mut DwMmc,
     gic_redistributor: &GicRedistributor,
 ) -> (usize, usize) {
     const RAM_VIRTUAL_BASE: usize = 0x40000000;
