@@ -45,6 +45,30 @@ pub fn get_id_aa64mmfr0_el1() -> u64 {
     id_aa64mmfr0_el1
 }
 
+pub fn get_sctlr_el2() -> u64 {
+    let sctlr_el2: u64;
+    unsafe { asm!("mrs {}, sctlr_el2", out(reg) sctlr_el2) };
+    sctlr_el2
+}
+
+pub fn get_tcr_el2() -> u64 {
+    let tcr_el2: u64;
+    unsafe { asm!("mrs {}, tcr_el2", out(reg) tcr_el2) };
+    tcr_el2
+}
+
+pub fn get_ttbr0_el2() -> u64 {
+    let ttbr0_el2: u64;
+    unsafe { asm!("mrs {}, ttbr0_el2", out(reg) ttbr0_el2) };
+    ttbr0_el2
+}
+
+pub fn get_mair_el2() -> u64 {
+    let mair_el2: u64;
+    unsafe { asm!("mrs {}, mair_el2", out(reg) mair_el2) };
+    mair_el2
+}
+
 pub fn get_vtcr_el2() -> u64 {
     let vtcr_el2: u64;
     unsafe { asm!("mrs {}, vtcr_el2", out(reg) vtcr_el2) };
@@ -258,6 +282,13 @@ pub unsafe fn smc(mut x0: u64, x1: u64, x2: u64, x3: u64) -> u64 {
 pub extern "C" fn core_entry() -> ! {
     naked_asm!("
             mov sp, x0
+            ldp x1, x2, [x0, #-(16 * 2)] /* x1: TCR_EL2,    x2: TTBR0_EL2 */
+            ldp x3, x4, [x0, #-(16 * 1)] /* x3: MAIR_EL2,   x4: SCTLR_EL2 */
+            msr tcr_el2,    x1
+            msr ttbr0_el2,  x2
+            msr mair_el2,   x3
+            isb
+            msr sctlr_el2,  x4
             b   {}",
         sym crate::core_main
     )

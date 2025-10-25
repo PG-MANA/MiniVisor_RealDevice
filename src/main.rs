@@ -382,6 +382,17 @@ pub fn launch_cpu() -> bool {
     let stack_address = allocate_pages(STACK_SIZE >> paging::PAGE_SHIFT, 0)
         .expect("Failed to allocate memory")
         + STACK_SIZE;
+
+    /* Copy registers controlling the paging */
+    use core::ptr::write_volatile;
+    unsafe {
+        write_volatile((stack_address - 8 * 4) as *mut u64, asm::get_tcr_el2());
+        write_volatile((stack_address - 8 * 3) as *mut u64, asm::get_ttbr0_el2());
+        write_volatile((stack_address - 8 * 2) as *mut u64, asm::get_mair_el2());
+        write_volatile((stack_address - 8 * 1) as *mut u64, asm::get_sctlr_el2());
+    }
+    asm::flush_data_cache_all();
+
     while let Some(cpu) = dtb.search_node(b"cpu", cpu_node.as_ref()) {
         if let Some((affinity, _)) = dtb.read_reg_property(&cpu, 0)
             && current_affinity != affinity as u64
